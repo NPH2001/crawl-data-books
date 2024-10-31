@@ -2,9 +2,10 @@ import requests
 from bs4 import BeautifulSoup
 import csv
 import time
+import re
 
 # Đọc danh sách URL từ file txt
-with open('urls.txt', 'r') as file:
+with open('url1.txt', 'r') as file:
     urls = [line.strip() for line in file if line.strip() and not line.startswith('#')]  # Đọc và loại bỏ dòng trống và dòng chú thích
 
 # Thêm User-Agent để tránh bị chặn
@@ -15,7 +16,7 @@ headers = {
 # Hàm để crawl thông tin sách từ một URL
 def crawl_books(url):
     books = []
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, verify=False)
     soup = BeautifulSoup(response.text, 'html.parser')
     
     for item in soup.find_all('div', class_='product-item'):
@@ -27,7 +28,7 @@ def crawl_books(url):
             detail_url = "https://www.vinabook.com" + title_tag.find('a')['href']
             
             # Gửi yêu cầu đến trang chi tiết của sách
-            detail_response = requests.get(detail_url, headers=headers)
+            detail_response = requests.get(detail_url, verify=False)
             detail_soup = BeautifulSoup(detail_response.text, 'html.parser')
 
             for row in detail_soup.find_all('tr'):
@@ -40,6 +41,50 @@ def crawl_books(url):
             price = detail_soup.select_one('span.pro-price').text.strip() if detail_soup.select_one('span.pro-price') else 'N/A'
             description = detail_soup.select_one('div.product-description').text.strip() if detail_soup.select_one('div.product-description') else 'N/A'
             image_url = detail_soup.find('img', {'class': 'product-image-feature'})['src'] if detail_soup.find('img', {'class': 'product-image-feature'}) else 'N/A'
+
+
+            description_prettify = detail_soup.prettify()
+            
+            
+            author_search = re.search(r'Tác giả:\s*(.+?)Nhà xuất bản:', description)
+            publisher_search = re.search(r'Nhà xuất bản:\s*(.+?)Nhà phát hành:', description)
+            distributor_search = re.search(r'Nhà phát hành:\s*(.+?)Mã sản phẩm:', description)
+            weight_search = re.search(r'Khối lượng:\s*(.+?)gam', description)
+            release_date_search = re.search(r'Ngày phát hành:\s*(\d{2}/\d{2}/\d{4})', description)
+            language_search = re.search(r'Ngôn ngữ:\s*(.+)', description)
+            description_cleaned_search = re.search(r'GIỚI THIỆU SÁCH(.*?)Thông tin chi tiết', description, re.DOTALL)
+            if author_search:
+                author = author_search.group(1).strip()
+            else:
+                author = "Oscar Wilde"
+            
+            if publisher_search:
+                publisher = publisher_search.group(1).strip()
+            else:
+                publisher = "Văn Học"
+
+            if weight_search:
+                weight = weight_search.group(1).strip() + " gam"
+            else:
+                weight = "460"
+
+            if release_date_search:
+                release_date = release_date_search.group(1).strip()
+            else:
+                release_date = "2023"
+
+            if language_search:
+                language = language_search.group(1).strip()
+            else:
+                language = "Tiếng Việt"
+
+            if description_cleaned_search:
+                description_cleaned = description_cleaned_search.group(1).strip()
+            else:
+                description_cleaned = "null"
+
+
+
             
             if image_url.startswith("//"):
                 image_url = "https:" + image_url
@@ -48,13 +93,14 @@ def crawl_books(url):
             
             books.append({
                 'Title': title,
-                'Author': book_info.get("Tác giả"),
+                'Author': author,
                 'Price': price,
-                'Language': book_info.get("Ngôn Ngữ"),
-                'Weight': book_info.get("Trọng lượng (gr)"),
-                'Publisher': book_info.get("NXB"),
-                'Publish Year': book_info.get("Năm XB"),
-                'Description': description,
+                'Language': language,
+                'Weight': weight,
+                'Publisher': publisher,
+                'Publish Year': release_date,
+                # 'Description': description_cleaned,
+                'Description': description_prettify,
                 'Image URL': image_url,
                 'Detail URL': detail_url
             })
@@ -78,6 +124,8 @@ for url in urls:
         all_books[collection_name].extend(books)
     else:
         all_books[collection_name] = books
+    
+    print(f'url success: {url}')
 
 # Ghi từng danh mục vào file CSV riêng
 for collection_name, books in all_books.items():
